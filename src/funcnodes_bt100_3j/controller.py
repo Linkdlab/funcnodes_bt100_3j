@@ -1,9 +1,6 @@
-import sys
-import glob
 import serial
 import asyncio
 import contextlib
-import threading
 import queue
 import time
 
@@ -22,11 +19,11 @@ class BT100_3J:
     CLOCKWISE = 0x01
     START = 0x01
     STOP = 0x00
-    W = 0x57
-    J = 0x4A
-    R = 0x52
-    I = 0x49
-    D = 0x44
+    W = 0x57  # noqa: E741
+    J = 0x4A  # noqa: E741
+    R = 0x52  # noqa: E741
+    I = 0x49  # noqa: E741
+    D = 0x44  # noqa: E741
 
     def __init__(self):
         self._port = None
@@ -35,8 +32,8 @@ class BT100_3J:
         self.writeThread = None
         self.writeQueue = queue.Queue()
         self._connected = False
-        self.start_flag = b"\xE9"
-        self.stop_pdu = b"\xE9\x1F\x06\x57\x4A\x01\xF4\x10\x01\xE0"
+        self.start_flag = b"\xe9"
+        self.stop_pdu = b"\xe9\x1f\x06\x57\x4a\x01\xf4\x10\x01\xe0"
         self.Pump_ID = b"\x01"  # Assuming Pump ID is intended to be in bytes
 
         self._local_state = {"rpm": 1, "state": self.STOP, "dir": self.CLOCKWISE}
@@ -62,6 +59,7 @@ class BT100_3J:
         raise RuntimeError("No BT100-3J pump found")
 
     async def connect(self, port=None):
+        await self.disconnect()
         if port is None:
             port = self._port
         if port is None:
@@ -138,7 +136,7 @@ class BT100_3J:
         if len(message) < 3:
             return False
 
-        address = message[0]
+        # address = message[0]
         length = original_length = message[1]
         if len(message) < length + 3:
             return False
@@ -209,10 +207,10 @@ class BT100_3J:
         while i < len(pdu):
             # Check for special byte sequences and ensure not to go out of bounds
             if i + 1 < len(pdu) and pdu[i] == 0xE8 and pdu[i + 1] == 0x00:
-                unescaped_pdu += b"\xE8"
+                unescaped_pdu += b"\xe8"
                 i += 2  # Skip the next byte in the escape sequence
             elif i + 1 < len(pdu) and pdu[i] == 0xE8 and pdu[i + 1] == 0x01:
-                unescaped_pdu += b"\xE9"
+                unescaped_pdu += b"\xe9"
                 i += 2  # Skip the next byte in the escape sequence
             else:
                 unescaped_pdu += pdu[
@@ -227,9 +225,9 @@ class BT100_3J:
         escaped_pdu = b""
         for byte in pdu:
             if byte == 0xE8:
-                escaped_pdu += b"\xE8\x00"
+                escaped_pdu += b"\xe8\x00"
             elif byte == 0xE9:
-                escaped_pdu += b"\xE8\x01"
+                escaped_pdu += b"\xe8\x01"
             else:
                 escaped_pdu += bytes([byte])
 
@@ -353,7 +351,7 @@ class BT100_3J:
         print(d)
 
     async def pump_for(
-        self, seconds: float, rpm: float = None, dir: int = None
+        self, seconds: float, rpm: float = None, dir: int = None, cb=None
     ) -> bool:
         if rpm is None:
             rpm = self.rpm
@@ -366,13 +364,18 @@ class BT100_3J:
             self._stop_evt.clear()
 
         t = time.time()
+        if cb is not None:
+            cb(0)
         await self.set_state(rpm=rpm, state=self.START, dir=dir)
         seconds = max(0, seconds - (time.time() - t))
 
-        ## sleep for time or till stop_evt is set
+        # sleep for time or till stop_evt is set
         print("pumping for", seconds)
         if not await event_wait(self._stop_evt, seconds):
             await self.stop()
+        if cb is not None:
+            cb(1)
+
         return True
 
     def __del__(self):

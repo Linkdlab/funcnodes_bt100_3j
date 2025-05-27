@@ -32,7 +32,7 @@ def available_serial_ports():
     available_ports = []
     for port in ports:
         try:
-            with serial.Serial(port) as ser:
+            with serial.Serial(port):
                 available_ports.append(port)
         except (OSError, serial.SerialException):
             continue
