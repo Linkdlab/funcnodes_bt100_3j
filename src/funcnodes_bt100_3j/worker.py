@@ -1,8 +1,9 @@
+import funcnodes as fn
 from funcnodes import FuncNodesExternalWorker, instance_nodefunction
 from .controller import BT100_3J
 import time
-from typing import Literal
-
+from typing import Optional
+import asyncio
 from .ports import DEVICE_UPDATE_TIME, list_available_ports
 
 
@@ -34,7 +35,7 @@ class LongerBT1003JWorker(FuncNodesExternalWorker):
         await self._controller.connect(port)
         self.update_state()
 
-    @instance_nodefunction
+    @instance_nodefunction()
     async def disconnect(self):
         await self._controller.disconnect()
 
@@ -67,7 +68,11 @@ class LongerBT1003JWorker(FuncNodesExternalWorker):
             does_trigger=False,
         )
 
-    @instance_nodefunction()
+    @instance_nodefunction(
+        default_io_options={
+            "rpm": {"value_options": {"min": 0.1, "max": 100.0, "step": 0.1}},
+        },
+    )
     async def set_state(self, rpm: int = 50, clockwise: bool = True, on: bool = False):
         rpm = int(rpm)
         direction = (
@@ -79,9 +84,17 @@ class LongerBT1003JWorker(FuncNodesExternalWorker):
         await self._controller.set_state(rpm=rpm, dir=direction, state=state)
         self.update_state()
 
-    @instance_nodefunction()
+    @instance_nodefunction(
+        default_io_options={
+            "rpm": {"value_options": {"min": 0.1, "max": 100.0, "step": 0.1}},
+        },
+    )
     async def pump_for(
-        self, seconds: int, clockwise: bool = True, rpm: int = None
+        self,
+        seconds: int,
+        clockwise: bool = True,
+        rpm: int = None,
+        node: Optional[fn.Node] = None,
     ) -> bool:
         direction = (
             self._controller.CLOCKWISE
@@ -89,8 +102,34 @@ class LongerBT1003JWorker(FuncNodesExternalWorker):
             else self._controller.COUNTERCLOCKWISE
         )
 
-        return await self._controller.pump_for(
-            seconds=seconds,
-            dir=direction,
-            rpm=rpm,
-        )
+        with node.progress(total=seconds * 1000, desc="pumping") as pbar:
+            task = None
+
+            def cb(state):
+                nonlocal task
+                if state == 0:
+
+                    async def ud():
+                        start = time.time()
+                        last = start
+                        now = start
+                        remaining = seconds
+                        while remaining > 0:
+                            await asyncio.sleep(min(remaining, 0.5))
+                            now = time.time()
+                            delta = now - last
+                            pbar.update(int(delta * 1000))
+                            last = now
+                            remaining = seconds - (now - start)
+
+                    task = asyncio.create_task(ud())
+
+                elif state == 1:
+                    if task:
+                        task.cancel()
+                        task = None
+
+            res = await self._controller.pump_for(
+                seconds=seconds, dir=direction, rpm=rpm, cb=cb
+            )
+        return res
