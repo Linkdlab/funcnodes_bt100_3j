@@ -1,6 +1,6 @@
 [project]
 name = "funcnodes-bt100-3j"
-version = "0.1.0"
+version = "0.1.1"
 description = "funcnodes controller for the longer bt100-3j pump"
 readme = "README.md"
 dependencies = [
